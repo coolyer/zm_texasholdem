@@ -3,7 +3,8 @@
 **Author:** Coolyer  
 **⚠️ Please credit if used.**
 
-**STILL WIP THERE A LOT OF ERROR RN**
+**STILL WIP**
+**ERRORS SO FAR 743, 772 STRUCT ERRORS BEING FIXED**
 
 ---
 
