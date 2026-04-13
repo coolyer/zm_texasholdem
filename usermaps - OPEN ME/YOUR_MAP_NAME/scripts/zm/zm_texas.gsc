@@ -9,7 +9,6 @@
 #using scripts\codescripts\struct;
 #using scripts\zm\zm_texas_ai;
 
-
 #precache("material", "2_of_clubs");
 #precache("material", "3_of_clubs");
 #precache("material", "4_of_clubs");
@@ -67,7 +66,9 @@
 #define AI_ALLOWED 1
 #define MIN_PLAYERS 2
 #define MAX_PLAYERS 5
-#define CHIPSTOPLAY 5
+#define POINTS_TO_PLAY 50
+#define RAISE_POINTS 10
+
 function init_texas_poker()
 {
     tables = GetEntArray("poker_table", "targetname");
@@ -89,12 +90,11 @@ function poker_table_think()
             continue;
         if(!isDefined(player.poker_busy))
         {
-            // Only show waiting hint if more than one player
             if(GetPlayers().size > 1)
                 trig SetHintString("^1Waiting for players...");
-            if(isDefined(player.sessionstate) && (!isDefined(player.poker_chips) || player.poker_chips < CHIPSTOPLAY))
+            if(isDefined(player.sessionstate) && player.score < POINTS_TO_PLAY)
             {
-                player IPrintLnBold("You need at least " + CHIPSTOPLAY + " chips to play poker! Visit the bank.");
+                player IPrintLnBold("You need at least " + POINTS_TO_PLAY + " points to play poker!");
                 continue;
             }
             trig.poker_in_use = true;
@@ -113,7 +113,6 @@ function poker_lobby(trig)
     min_players = MIN_PLAYERS;
     max_players = MAX_PLAYERS;
 
-    // If solo, skip lobby and fill with AI
     if(GetPlayers().size == 1)
     {
         if(AI_ALLOWED == 1)
@@ -122,7 +121,6 @@ function poker_lobby(trig)
             {
                 ai = zm_texas_ai::create_texas_ai();
                 players[players.size] = ai;
-				ai.poker_chips = 100;
                 host IPrintLnBold("AI Player added: " + ai.name);
             }
             thread play_texas_hand_multiplayer(trig, players);
@@ -130,10 +128,8 @@ function poker_lobby(trig)
         }
     }
 
-    // --- original lobby loop here ---
     while(1)
     {
-        // Show lobby HUD to host
         if(!isDefined(lobby_huds["host"]))
         {
             lobby_huds["host"] = NewClientHudElem(host);
@@ -145,7 +141,6 @@ function poker_lobby(trig)
         }
         lobby_huds["host"] SetText("^2Players joined: " + players.size + "  (Use = Start, Crouch = Cancel)");
 
-        // Let other players join by proximity/trigger
         ents = GetEntArray("poker_table", "targetname");
         for(i=0;i<ents.size;i++)
         {
@@ -157,26 +152,24 @@ function poker_lobby(trig)
                 if(array_index_of(players, p) == -1 && !isDefined(p.poker_busy) && Distance(p.origin, ent.origin) < 100)
                 {
                     players[players.size] = p;
-					p.poker_busy = true;
-					if(isDefined(p.sessionstate))
-					{
-						join_hud = NewClientHudElem(p);
-						join_hud.alignX = "center";
-						join_hud.alignY = "middle";
-						join_hud.horzAlign = "center";
-						join_hud.vertAlign = "middle";
-						join_hud.y = -120;
-						join_hud SetText("^2Joined Poker Table! Waiting for host...");
-						lobby_huds[p GetEntityNumber()] = join_hud;
-					}
+                    p.poker_busy = true;
+                    if(isDefined(p.sessionstate))
+                    {
+                        join_hud = NewClientHudElem(p);
+                        join_hud.alignX = "center";
+                        join_hud.alignY = "middle";
+                        join_hud.horzAlign = "center";
+                        join_hud.vertAlign = "middle";
+                        join_hud.y = -120;
+                        join_hud SetText("^2Joined Poker Table! Waiting for host...");
+                        lobby_huds[p GetEntityNumber()] = join_hud;
+                    }
                 }
             }
         }
 
-        // Host can start or cancel
         if(host UseButtonPressed() && players.size >= min_players)
         {
-            // If only one human, fill with AI and start immediately
             if(AI_ALLOWED == 1 && players.size == 1)
             {
                 while(players.size < max_players)
@@ -185,12 +178,11 @@ function poker_lobby(trig)
                     players[players.size] = ai;
                     host IPrintLnBold("AI Player added: " + ai.name);
                 }
-                // Clean up lobby HUDs
                 for(i=0;i<players.size;i++)
                 {
                     p = players[i];
                     if(isDefined(p.sessionstate) && isDefined(lobby_huds[p GetEntityNumber()]))
-    					lobby_huds[p GetEntityNumber()] Destroy();
+                        lobby_huds[p GetEntityNumber()] Destroy();
                 }
                 if(isDefined(lobby_huds["host"])) lobby_huds["host"] Destroy();
                 thread play_texas_hand_multiplayer(trig, players);
@@ -200,13 +192,12 @@ function poker_lobby(trig)
         }
         if(host GetStance() == "crouch")
         {
-            // Cancel lobby
             for(i=0;i<players.size;i++)
             {
                 p = players[i];
                 if(isDefined(p.poker_busy)) p.poker_busy = undefined;
                 if(isDefined(p.sessionstate) && isDefined(lobby_huds[p GetEntityNumber()]))
-    				lobby_huds[p GetEntityNumber()] Destroy();
+                    lobby_huds[p GetEntityNumber()] Destroy();
             }
             if(isDefined(lobby_huds["host"])) lobby_huds["host"] Destroy();
             trig.poker_in_use = false;
@@ -216,21 +207,20 @@ function poker_lobby(trig)
         wait(0.1);
     }
 
-    // Clean up lobby HUDs
     for(i=0;i<players.size;i++)
     {
         p = players[i];
         if(isDefined(p.sessionstate) && isDefined(lobby_huds[p GetEntityNumber()]))
-    		lobby_huds[p GetEntityNumber()] Destroy();
+            lobby_huds[p GetEntityNumber()] Destroy();
     }
     if(isDefined(lobby_huds["host"])) lobby_huds["host"] Destroy();
 
-    // After host presses Use to start
     if(AI_ALLOWED == 1 && players.size == 1)
     {
         while(players.size < max_players)
         {
             ai = zm_texas_ai::create_texas_ai();
+            ai.score = 1000;
             players[players.size] = ai;
             host IPrintLnBold("AI Player added: " + ai.name);
         }
@@ -238,17 +228,6 @@ function poker_lobby(trig)
         return;
     }
 
-    // Fill empty seats with AI if allowed and only one human player
-    if(AI_ALLOWED == 1 && players.size == 1)
-    {
-        while(players.size < max_players)
-        {
-            ai = zm_texas_ai::create_texas_ai();
-            players[players.size] = ai;
-        }
-    }
-
-    // Start the game for all players
     thread play_texas_hand_multiplayer(trig, players);
 }
 
@@ -276,7 +255,6 @@ function make_shuffled_deck()
     ranks[11] = 13;
     ranks[12] = 14;
 
-    // Create all 52 cards
     for(i=0;i<suits.size;i++)
     {
         for(j=0;j<ranks.size;j++)
@@ -288,7 +266,6 @@ function make_shuffled_deck()
         }
     }
 
-    // Fisher-Yates shuffle
     for(i=deck.size-1;i>0;i--)
     {
         j = RandomInt(i+1);
@@ -300,8 +277,20 @@ function make_shuffled_deck()
     return deck;
 }
 
-function texas_betting_round(players, min_bet)
+function texas_betting_round(players, min_bet, statuses)
 {
+   
+    for(i=0;i<players.size;i++)
+    {
+        if(players[i].folded)
+        {
+            statuses[i] = "folded";
+            continue;
+        }
+        if(statuses[i] == "out")
+            continue;
+    }
+    update_all_status_huds(players, statuses);
     IPrintLnBold("=== Starting betting round. Min bet: " + min_bet + " ===");
     pot = 0;
     highest_bet = min_bet;
@@ -309,7 +298,6 @@ function texas_betting_round(players, min_bet)
     {
         p = players[i];
         p.current_bet = 0;
-        // Do NOT reset p.folded here!
     }
 
     done = false;
@@ -319,7 +307,6 @@ function texas_betting_round(players, min_bet)
         IPrintLnBold("Betting round pass #" + round_num);
         done = true;
 
-        // --- Early exit if only one player left ---
         active_players = 0;
         last_player = undefined;
         for(i=0;i<players.size;i++)
@@ -333,19 +320,17 @@ function texas_betting_round(players, min_bet)
         if(active_players == 1)
         {
             IPrintLnBold(last_player.name + " wins the pot (everyone else folded)!");
-            last_player.poker_chips += pot;
+            last_player.score += pot;
             return pot;
         }
 
         for(i=0;i<players.size;i++)
         {
             p = players[i];
-            //IPrintLnBold("DEBUG: " + p.name + " folded=" + p.folded);
             if(p.folded)
                 continue;
             if(p.current_bet < highest_bet || highest_bet == 0)
             {
-                // Player's turn
                 if(isDefined(p.sessionstate))
                 {
                     IPrintLnBold("Your turn! Current bet: " + p.current_bet + ", Highest bet: " + highest_bet);
@@ -372,45 +357,50 @@ function texas_betting_round(players, min_bet)
                     if(choice == "call")
                     {
                         cost = highest_bet - p.current_bet;
-                        if(p.points >= cost)
+                        if(p.score >= cost)
                         {
-                            p.points -= cost;
+                            p.score -= cost;
                             pot += cost;
                             p.current_bet = highest_bet;
-                            p IPrintLnBold("You call. Points left: " + p.points);
+                            p IPrintLnBold("You call. Points left: " + p.score);
+                            statuses[i] = "checked";
                         }
                         else
                         {
                             p IPrintLnBold("Not enough points to call! You fold.");
                             p.folded = true;
+                            statuses[i] = "folded";
                         }
                     }
                     else if(choice == "raise")
                     {
-                        raise_amt = highest_bet + 1;
+                        raise_amt = highest_bet + RAISE_POINTS;
                         cost = raise_amt - p.current_bet;
-                        if(p.points >= cost)
+                        if(p.score >= cost)
                         {
                             highest_bet = raise_amt;
-                            p.points -= cost;
+                            p.score -= cost;
                             pot += cost;
                             p.current_bet = highest_bet;
-                            p IPrintLnBold("You raise. Points left: " + p.points);
+                            p IPrintLnBold("You raise. Points left: " + p.score);
+                            statuses[i] = "raises";
                             done = false;
                         }
                         else
                         {
                             p IPrintLnBold("Not enough points to raise! You call instead.");
                             cost = highest_bet - p.current_bet;
-                            if(p.points >= cost)
+                            if(p.score >= cost)
                             {
-                                p.points -= cost;
+                                p.score -= cost;
                                 pot += cost;
                                 p.current_bet = highest_bet;
+                                statuses[i] = "checked";
                             }
                             else
                             {
                                 p.folded = true;
+                                statuses[i] = "folded";
                             }
                         }
                     }
@@ -418,51 +408,42 @@ function texas_betting_round(players, min_bet)
                     {
                         p.folded = true;
                         p IPrintLnBold("You fold.");
+                        statuses[i] = "folded";
                         if(isDefined(p.hud)) {
                             destroy_texas_hud(p.hud);
                             p.hud = undefined;
                         };
                     }
+                    update_all_status_huds(players, statuses);
                 }
                 else
                 {
-                    // --- AI logic: simple random for now ---
-                    IPrintLnBold(p.name + "'s turn. Current bet: " + p.current_bet + ", Highest bet: " + highest_bet);
-                    ai_action = RandomInt(3); // 0=fold, 1=call, 2=raise
+                    ai_action = RandomInt(3);
                     if(ai_action == 0)
                     {
                         p.folded = true;
-                        IPrintLnBold(p.name + " folds.");
+                        statuses[i] = "folded";
                     }
                     else if(ai_action == 1)
                     {
-                        IPrintLnBold(p.name + " calls.");
                         pot += (highest_bet - p.current_bet);
                         p.current_bet = highest_bet;
+                        statuses[i] = "checked";
                     }
                     else
                     {
-                        raise_amt = highest_bet + 1;
+                        raise_amt = highest_bet + RAISE_POINTS;
                         highest_bet = raise_amt;
                         pot += (highest_bet - p.current_bet);
                         p.current_bet = highest_bet;
-                        if(isDefined(p.sessionstate))
-                            p IPrintLnBold("You raise. Points left: " + p.points);
-                        else
-                            IPrintLnBold(p.name + " raises.");
+                        statuses[i] = "raises";
                         done = false;
                     }
+                    update_all_status_huds(players, statuses);
                     wait(0.5);
                 }
             }
         }
-        // Print who is still in
-        for(i=0;i<players.size;i++)
-        {
-            p = players[i];
-            IPrintLnBold(p.name + " folded: " + p.folded + ", current bet: " + p.current_bet);
-        }
-        // Check if all non-folded players have matched the highest bet
         for(i=0;i<players.size;i++)
         {
             p = players[i];
@@ -471,51 +452,69 @@ function texas_betting_round(players, min_bet)
         }
         round_num++;
     }
+    update_all_status_huds(players, statuses);
     IPrintLnBold("=== Betting round complete. Pot: " + pot + " ===");
     return pot;
 }
 
-
 function play_texas_hand_multiplayer(trig, players)
 {
+    statuses = [];
     while(1)
     {
-        // --- Deduct 5 chip ante from each player and add to pot ---
         pot = 0;
         for(i=0;i<players.size;i++)
         {
-            p = players[i];
-            if(!isDefined(p.poker_chips)) p.poker_chips = 100; // fallback for AI
-            if(p.poker_chips < 5)
+            player = players[i];
+            player.folded = false;
+
+            if (!isDefined(player.score))
+                player.score = 1000;
+
+            if(player.score < POINTS_TO_PLAY)
             {
-                p.folded = true;
-                p IPrintLnBold("Not enough chips for ante! You are out.");
+                player.folded = true;
+                statuses[i] = "out";
             }
             else
             {
-                p.poker_chips -= 5;
-                pot += 5;
-                p.folded = false;
-                if(isDefined(p.sessionstate))
-                    p IPrintLnBold("Paid 5 chip ante. Chips left: " + p.poker_chips);
-                else
-                    IPrintLnBold(p.name + " paid 5 chip ante. Chips left: " + p.poker_chips);
+                player.score -= POINTS_TO_PLAY;
+                pot += POINTS_TO_PLAY;
+                statuses[i] = "in";
             }
+            // No need to use player.was_folded unless you have a special rule
         }
+            IPrintLnBold("=== New Texas Hold'em hand starting! ===");
 
-        // --- Give each player 100 chips for betting this hand (or less if they have less) ---
+        // --- Create HUDs ---
         for(i=0;i<players.size;i++)
         {
-            p = players[i];
-            if(!p.folded)
+            player = players[i];
+            if(isDefined(player.sessionstate))
             {
-                p.points = 100;
-                if(p.poker_chips < 100)
-                    p.points = p.poker_chips;
+                player.pot_hud = NewClientHudElem(player);
+                player.pot_hud.alignX = "left";
+                player.pot_hud.alignY = "top";
+                player.pot_hud.horzAlign = "left";
+                player.pot_hud.vertAlign = "top";
+                player.pot_hud.x = 20;
+                player.pot_hud.y = 20;
+                player.pot_hud.fontScale = 1.2;
+                player.pot_hud SetText("Current Pot: " + pot);
+
+                // --- Status HUD ---
+                player.status_hud = NewClientHudElem(player);
+                player.status_hud.alignX = "left";
+                player.status_hud.alignY = "top";
+                player.status_hud.horzAlign = "left";
+                player.status_hud.vertAlign = "top";
+                player.status_hud.x = 20;
+                player.status_hud.y = 60;
+                player.status_hud.fontScale = 1.0;
             }
         }
+        update_all_status_huds(players, statuses);
 
-        IPrintLnBold("=== New Texas Hold'em hand starting! ===");
         deck = make_shuffled_deck();
         deck_index_ref = spawnstruct();
         deck_index_ref.idx = 0;
@@ -526,48 +525,17 @@ function play_texas_hand_multiplayer(trig, players)
         turn_hud_imgs = [];
         river_hud_imgs = [];
 
-        // --- Create Pot and Chips HUDs for each real player ---
         for(i=0;i<players.size;i++)
         {
-            p = players[i];
-            if(isDefined(p.sessionstate))
+            player = players[i];
+            player.poker_hand = [];
+            if(isDefined(player.sessionstate))
             {
-                // Pot HUD (top left)
-                p.pot_hud = NewClientHudElem(p);
-                p.pot_hud.alignX = "left";
-                p.pot_hud.alignY = "top";
-                p.pot_hud.horzAlign = "left";
-                p.pot_hud.vertAlign = "top";
-                p.pot_hud.x = 20;
-                p.pot_hud.y = 20;
-                p.pot_hud.fontScale = 1.2;
-                p.pot_hud SetText("Current Pot: " + pot);
-
-                // Chips HUD (bottom left)
-                p.chips_hud = NewClientHudElem(p);
-                p.chips_hud.alignX = "left";
-                p.chips_hud.alignY = "bottom";
-                p.chips_hud.horzAlign = "left";
-                p.chips_hud.vertAlign = "bottom";
-                p.chips_hud.x = 20;
-                p.chips_hud.y = -20;
-                p.chips_hud.fontScale = 1.2;
-                p.chips_hud SetText("Chips: " + p.poker_chips);
-            }
-        }
-
-        // --- Deal player hands ---
-        for(i=0;i<players.size;i++)
-        {
-            p = players[i];
-            p.poker_hand = [];
-            if(isDefined(p.sessionstate))
-            {
-                p.hud = create_texas_hud(p);
-                p.hud.player_card_imgs = [];
+                player.hud = create_texas_hud(player);
+                player.hud.player_card_imgs = [];
                 for(j=0;j<2;j++)
                 {
-                    img = NewClientHudElem(p);
+                    img = NewClientHudElem(player);
                     img.alignX = "center";
                     img.alignY = "middle";
                     img.horzAlign = "center";
@@ -575,50 +543,46 @@ function play_texas_hand_multiplayer(trig, players)
                     img.x = -40 + j*80;
                     img.y = 150;
                     img SetShader("sleeve", 64, 64);
-                    p.hud.player_card_imgs[p.hud.player_card_imgs.size] = img;
+                    player.hud.player_card_imgs[player.hud.player_card_imgs.size] = img;
                     wait(0.4);
                     card = draw_card(deck, deck_index_ref);
-                    p.poker_hand[p.poker_hand.size] = card;
-                    //IPrintLnBold("Dealt to player " + i + " (human): " + card.rank + " of " + card.suit + " (deck_index_ref=" + deck_index_ref.idx + ")");
+                    player.poker_hand[player.poker_hand.size] = card;
                     mat = card_to_material(card, card.suit);
                     img SetShader(mat, 64, 64);
                     wait(0.2);
                 }
-                update_texas_hud(p, p.hud);
+                update_texas_hud(player, player.hud);
             }
-            else if(!p.folded) // AI
+            else if(!player.folded)
             {
                 for(j=0;j<2;j++)
                 {
                     card = draw_card(deck, deck_index_ref);
-                    p.poker_hand[p.poker_hand.size] = card;
-                    //IPrintLnBold("Dealt to player " + i + " (AI): " + card.rank + " of " + card.suit + " (deck_index_ref=" + deck_index_ref.idx + ")");
+                    player.poker_hand[player.poker_hand.size] = card;
                 }
             }
         }
 
-        // --- Betting round before flop ---
-        pot += texas_betting_round(players, 0);
+        // --- Pass statuses to betting round ---
+        pot += texas_betting_round(players, 0, statuses);
+        update_all_status_huds(players, statuses);
 
-        // --- Update Pot HUD after betting round ---
         for(i=0;i<players.size;i++)
         {
-            p = players[i];
-            if(isDefined(p.sessionstate) && isDefined(p.pot_hud))
-                p.pot_hud SetText("Current Pot: " + pot);
+            player = players[i];
+            if(isDefined(player.sessionstate) && isDefined(player.pot_hud))
+                player.pot_hud SetText("Current Pot: " + pot);
         }
-
-        // --- Community cards (flop, turn, river) ---
-        // Flop
+        update_all_status_huds(players, statuses);
         IPrintLnBold("Dealing the flop...");
         for(i=0;i<3;i++)
         {
             for(j=0;j<players.size;j++)
             {
-                p = players[j];
-                if(isDefined(p.sessionstate))
+                player = players[j];
+                if(isDefined(player.sessionstate))
                 {
-                    img = NewClientHudElem(p);
+                    img = NewClientHudElem(player);
                     img.alignX = "center";
                     img.alignY = "middle";
                     img.horzAlign = "center";
@@ -633,36 +597,33 @@ function play_texas_hand_multiplayer(trig, players)
             wait(0.4);
             card = draw_card(deck, deck_index_ref);
             flop[flop.size] = card;
-            //IPrintLnBold("Flop card " + i + ": " + card.rank + " of " + card.suit + " (deck_index_ref=" + deck_index_ref.idx + ")");
             mat = card_to_material(card, card.suit);
             for(j=0;j<players.size;j++)
             {
-                p = players[j];
-                if(isDefined(p.sessionstate) && isDefined(flop_hud_imgs[j][i]))
+                player = players[j];
+                if(isDefined(player.sessionstate) && isDefined(flop_hud_imgs[j][i]))
                     flop_hud_imgs[j][i] SetShader(mat, 64, 64);
             }
             wait(0.2);
         }
 
-        // --- Betting round after flop ---
-        pot += texas_betting_round(players, 0);
+        pot += texas_betting_round(players, 0, statuses);
+        update_all_status_huds(players, statuses);
 
-        // --- Update Pot HUD after betting round ---
         for(i=0;i<players.size;i++)
         {
-            p = players[i];
-            if(isDefined(p.sessionstate) && isDefined(p.pot_hud))
-                p.pot_hud SetText("Current Pot: " + pot);
+            player = players[i];
+            if(isDefined(player.sessionstate) && isDefined(player.pot_hud))
+                player.pot_hud SetText("Current Pot: " + pot);
         }
-
-        // Turn
+        update_all_status_huds(players, statuses);
         IPrintLnBold("Dealing the turn...");
         for(j=0;j<players.size;j++)
         {
-            p = players[j];
-            if(isDefined(p.sessionstate))
+            player = players[j];
+            if(isDefined(player.sessionstate))
             {
-                turn_img = NewClientHudElem(p);
+                turn_img = NewClientHudElem(player);
                 turn_img.alignX = "center";
                 turn_img.alignY = "middle";
                 turn_img.horzAlign = "center";
@@ -675,35 +636,34 @@ function play_texas_hand_multiplayer(trig, players)
         }
         wait(0.4);
         turn = draw_card(deck, deck_index_ref);
-        IPrintLnBold("Turn card: " + turn.rank + " of " + turn.suit + " (deck_index_ref=" + deck_index_ref.idx + ")");
+        //IPrintLnBold("Turn card: " + turn.rank + " of " + turn.suit + " (deck_index_ref=" + deck_index_ref.idx + ")");
         mat = card_to_material(turn, turn.suit);
+        update_all_status_huds(players, statuses);
         for(j=0;j<players.size;j++)
         {
-            p = players[j];
-            if(isDefined(p.sessionstate) && isDefined(turn_hud_imgs[j]))
+            player = players[j];
+            if(isDefined(player.sessionstate) && isDefined(turn_hud_imgs[j]))
                 turn_hud_imgs[j] SetShader(mat, 64, 64);
         }
         wait(0.2);
 
-        // --- Betting round after turn ---
-        pot += texas_betting_round(players, 0);
+        pot += texas_betting_round(players, 0, statuses);
+        update_all_status_huds(players, statuses);
 
-        // --- Update Pot HUD after betting round ---
         for(i=0;i<players.size;i++)
         {
-            p = players[i];
-            if(isDefined(p.sessionstate) && isDefined(p.pot_hud))
-                p.pot_hud SetText("Current Pot: " + pot);
+            player = players[i];
+            if(isDefined(player.sessionstate) && isDefined(player.pot_hud))
+                player.pot_hud SetText("Current Pot: " + pot);
         }
-
-        // River
+        update_all_status_huds(players, statuses);
         IPrintLnBold("Dealing the river...");
         for(j=0;j<players.size;j++)
         {
-            p = players[j];
-            if(isDefined(p.sessionstate))
+            player = players[j];
+            if(isDefined(player.sessionstate))
             {
-                river_img = NewClientHudElem(p);
+                river_img = NewClientHudElem(player);
                 river_img.alignX = "center";
                 river_img.alignY = "middle";
                 river_img.horzAlign = "center";
@@ -716,62 +676,58 @@ function play_texas_hand_multiplayer(trig, players)
         }
         wait(0.4);
         river = draw_card(deck, deck_index_ref);
-        IPrintLnBold("River card: " + river.rank + " of " + river.suit + " (deck_index_ref=" + deck_index_ref.idx + ")");
+        //IPrintLnBold("River card: " + river.rank + " of " + river.suit + " (deck_index_ref=" + deck_index_ref.idx + ")");
         mat = card_to_material(river, river.suit);
+        update_all_status_huds(players, statuses);
         for(j=0;j<players.size;j++)
         {
-            p = players[j];
-            if(isDefined(p.sessionstate) && isDefined(river_hud_imgs[j]))
+            player = players[j];
+            if(isDefined(player.sessionstate) && isDefined(river_hud_imgs[j]))
                 river_hud_imgs[j] SetShader(mat, 64, 64);
         }
         wait(0.2);
 
-        // --- Showdown (only for players who didn't fold) ---
         IPrintLnBold("Showdown! Evaluating hands...");
         best_eval = undefined;
         winner = undefined;
         for(i=0;i<players.size;i++)
         {
-            p = players[i];
-            if(!p.folded)
+            player = players[i];
+            if(!player.folded)
             {
-                cards = combine_and_sort_hand(p.poker_hand, flop, turn, river);
+                cards = combine_and_sort_hand(player.poker_hand, flop, turn, river);
                 eval = evaluate_hand(cards);
-                IPrintLnBold(p.name + ": " + hand_description(eval));
+                IPrintLnBold(player.name + ": " + hand_description(eval));
                 if(!isDefined(best_eval) || compare_hands(eval, best_eval) > 0)
                 {
                     best_eval = eval;
-                    winner = p;
+                    winner = player;
                 }
             }
         }
         if(isDefined(winner))
         {
             IPrintLnBold("Winner: " + winner.name + " with " + hand_description(best_eval));
-            winner.poker_chips += pot;
+            winner.score += pot;
             if(isDefined(winner.sessionstate))
-                winner IPrintLnBold("You won the pot of " + pot + " chips! Total chips: " + winner.poker_chips);
+                winner IPrintLnBold("You won the pot of " + pot + " points! Total points: " + winner.score);
             else
-                IPrintLnBold(winner.name + " won the pot of " + pot + " chips! Total chips: " + winner.poker_chips);
-            // Update chips HUD for winner
-            if(isDefined(winner.sessionstate) && isDefined(winner.chips_hud))
-                winner.chips_hud SetText("Chips: " + winner.poker_chips);
+                IPrintLnBold(winner.name + " won the pot of " + pot + " points! Total points: " + winner.score);
         }
         else
         {
             IPrintLnBold("No winner (everyone folded?)");
         }
 
-        // --- HUD CLEANUP: Destroy all player and community card HUDs ---
+        // --- Destroy HUDs ---
         for(i=0;i<players.size;i++)
         {
-            p = players[i];
-            if(isDefined(p.hud))
+            player = players[i];
+            if(isDefined(player.hud))
             {
-                destroy_texas_hud(p.hud);
-                p.hud = undefined;
+                destroy_texas_hud(player.hud);
+                player.hud = undefined;
             }
-            // Destroy community card HUDs for this player
             if(isDefined(flop_hud_imgs[i]))
             {
                 for(j=0;j<flop_hud_imgs[i].size;j++)
@@ -780,27 +736,26 @@ function play_texas_hand_multiplayer(trig, players)
             if(isDefined(turn_hud_imgs[i])) turn_hud_imgs[i] Destroy();
             if(isDefined(river_hud_imgs[i])) river_hud_imgs[i] Destroy();
 
-            // Destroy Pot and Chips HUDs (only for real players)
-            if(isDefined(p.sessionstate) && isDefined(p.pot_hud)) p.pot_hud Destroy();
-            if(isDefined(p.sessionstate) && isDefined(p.chips_hud)) p.chips_hud Destroy();
+            if(isDefined(player.sessionstate) && isDefined(player.pot_hud)) player.pot_hud Destroy();
+            if(isDefined(player.sessionstate) && isDefined(player.status_hud)) player.status_hud Destroy();
         }
 
-        // --- Ready up system: wait for all human players to press Use ---
+        // --- Ready up and quit logic (unchanged) ---
         for(i=0;i<players.size;i++)
         {
-            p = players[i];
-            if(isDefined(p.sessionstate))
+            player = players[i];
+            if(isDefined(player.sessionstate))
             {
-                p.ready = false;
+                player.ready = false;
 
-                p.ready_hud = NewClientHudElem(p);
-                p.ready_hud.alignX = "center";
-                p.ready_hud.alignY = "middle";
-                p.ready_hud.horzAlign = "center";
-                p.ready_hud.vertAlign = "middle";
-                p.ready_hud.y = 200;
-                p.ready_hud.fontScale = 1.2;
-                p.ready_hud SetText("^2Press Use to play again | Melee to end");
+                player.ready_hud = NewClientHudElem(player);
+                player.ready_hud.alignX = "center";
+                player.ready_hud.alignY = "middle";
+                player.ready_hud.horzAlign = "center";
+                player.ready_hud.vertAlign = "middle";
+                player.ready_hud.y = 200;
+                player.ready_hud.fontScale = 1.2;
+                player.ready_hud SetText("^2Press Use to play again | Melee to end");
             }
         }
         while(1)
@@ -808,18 +763,18 @@ function play_texas_hand_multiplayer(trig, players)
             all_ready = true;
             for(i=0;i<players.size;i++)
             {
-                p = players[i];
-                if(isDefined(p.sessionstate) && !p.ready)
+                player = players[i];
+                if(isDefined(player.sessionstate) && !player.ready)
                 {
-                    if(p UseButtonPressed())
+                    if(player UseButtonPressed())
                     {
-                        p.ready = true;
-                        if(isDefined(p.ready_hud)) p.ready_hud Destroy();
+                        player.ready = true;
+                        if(isDefined(player.ready_hud)) player.ready_hud Destroy();
                     }
-                    else if(p MeleeButtonPressed())
+                    else if(player MeleeButtonPressed())
                     {
-                        p.quit_poker = true;
-                        if(isDefined(p.ready_hud)) p.ready_hud Destroy();
+                        player.quit_poker = true;
+                        if(isDefined(player.ready_hud)) player.ready_hud Destroy();
                     }
                     else
                     {
@@ -827,7 +782,6 @@ function play_texas_hand_multiplayer(trig, players)
                     }
                 }
             }
-            // If any player chose to quit, end the poker game
             quit = false;
             for(i=0;i<players.size;i++)
             {
@@ -840,58 +794,36 @@ function play_texas_hand_multiplayer(trig, players)
                 break;
             wait(0.05);
         }
-        // Clean up ready HUDs
         for(i=0;i<players.size;i++)
         {
-            p = players[i];
-            if(isDefined(p.ready_hud)) p.ready_hud Destroy();
+            player = players[i];
+            if(isDefined(player.ready_hud)) player.ready_hud Destroy();
         }
 
-        // --- QUIT CHECK: End the poker game if any player pressed melee ---
         for(i=0;i<players.size;i++)
         {
            if(isDefined(players[i].quit_poker) && players[i].quit_poker)
             {
-                // Clear poker_busy for all human players
                 for(j=0;j<players.size;j++)
                 {
                     if(isDefined(players[j].sessionstate) && isDefined(players[j].poker_busy))
                         players[j].poker_busy = undefined;
                 }
                 if(isDefined(trig)) trig.poker_in_use = false;
-                //IPrintLnBold("Poker game ended by player.");
                 return;
             }
         }
 
-        // Optionally: Remove players with no chips left from the table
-        for(i=0;i<players.size;i++)
-        {
-            p = players[i];
-            if(p.poker_chips < 5)
-            {
-                p IPrintLnBold("You are out of chips and removed from the table.");
-                p.folded = true;
-                if(isDefined(p.poker_busy))
-                    p.poker_busy = undefined;
-            }
-            // Update chips HUD for all players
-            if(isDefined(p.sessionstate) && isDefined(p.chips_hud))
-                p.chips_hud SetText("Chips: " + p.poker_chips);
-        }
-
-        // If all players are out, break the loop
         active_players = 0;
         for(i=0;i<players.size;i++)
         {
-            p = players[i];
-            if(!p.folded && p.poker_chips >= 5)
+            player = players[i];
+            if(!player.folded && player.score >= POINTS_TO_PLAY)
                 active_players++;
         }
         if(active_players == 0)
         {
-            IPrintLnBold("All players are out of chips. Poker game over.");
-            // Clear poker_busy for all human players
+            IPrintLnBold("All players are out of points. Poker game over.");
             for(i=0;i<players.size;i++)
             {
                 if(isDefined(players[i].sessionstate) && isDefined(players[i].poker_busy))
@@ -902,6 +834,10 @@ function play_texas_hand_multiplayer(trig, players)
         }
     }
 }
+
+
+// ----------- Helper Functions -----------
+
 function combine_and_sort_hand(hand, flop, turn, river)
 {
     cards = [];
@@ -1125,7 +1061,7 @@ function hand_name(rank)
     return "High Card";
 }
 
-// ----------- Helper Functions -----------
+
 
 function get_array_keys(arr)
 {
@@ -1208,6 +1144,27 @@ function player_fold_choice(player, hand)
     }
 }
 
+function update_all_status_huds(players, statuses)
+{
+    for(i=0;i<players.size;i++)
+    {
+        p = players[i];
+        if(isDefined(p.sessionstate) && isDefined(p.status_hud))
+        {
+            text = "";
+            for(j=0;j<players.size;j++)
+            {
+                name = players[j].name;
+                status = statuses[j];
+                if(status == "folded" || status == "out")
+                    text += "^1" + name + "^7: " + status + "\n"; // ^1 = red, ^7 = white/reset
+                else
+                    text += name + ": " + status + "\n";
+            }
+            p.status_hud SetText(text);
+        }
+    }
+}
 // ----------- Minimal HUD Functions -----------
 
 function create_texas_hud(player)
